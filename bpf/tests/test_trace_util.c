@@ -76,10 +76,46 @@ static void test_fresh_traceparent_still_matches(void) {
     assert_match_pos(1, got, __func__);
 }
 
+// A request whose proxy-appended traceparent sits past the old 1K window.
+static void test_traceparent_found_deep_in_large_header_block(void) {
+    unsigned char fresh[TRACE_BUF_SIZE] = {};
+    const char *prefix = "GET /headers HTTP/1.1\r\nHost: example.com\r\nCookie: ";
+    const char *tp = "\r\ntraceparent: 00-0123456789abcdef0123456789abcdef-0123456789abcdef-01\r\n";
+    const u32 cookie_len = 3000;
+
+    u32 n = 0;
+    memcpy(fresh + n, prefix, strlen(prefix));
+    n += strlen(prefix);
+    memset(fresh + n, 'c', cookie_len);
+    n += cookie_len;
+    memcpy(fresh + n, tp, strlen(tp));
+    const u32 want = n + 2;
+    n += strlen(tp);
+    memcpy(fresh + n, "\r\n", 2);
+    n += 2;
+
+    const u32 got = traceparent_pos_after_read((const unsigned char *)"x", fresh, n);
+
+    assert_match_pos(want, got, __func__);
+}
+
+static void test_scan_stops_at_end_of_headers(void) {
+    const unsigned char stale[] = "x";
+    const unsigned char fresh[] =
+        "POST / HTTP/1.1\r\nHost: example.com\r\n\r\n"
+        "traceparent: 00-0123456789abcdef0123456789abcdef-0123456789abcdef-01\r\n";
+
+    const u32 got = traceparent_pos_after_read(stale, fresh, sizeof(fresh) - 1);
+
+    assert_match_pos(k_tp_pos_not_found, got, __func__);
+}
+
 int main(void) {
     test_stale_suffix_cannot_complete_traceparent_prefix();
     test_stale_value_cannot_complete_traceparent_header();
     test_fresh_traceparent_still_matches();
+    test_traceparent_found_deep_in_large_header_block();
+    test_scan_stops_at_end_of_headers();
 
     return 0;
 }

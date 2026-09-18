@@ -94,6 +94,11 @@ static int tp_match(u32 index, void *data) {
     struct callback_ctx *ctx = data;
     unsigned char *s = &(ctx->buf[index]);
 
+    // end of headers: never scan into the body
+    if (is_eoh(s)) {
+        return 1;
+    }
+
     if (is_traceparent(s)) {
         ctx->pos = index;
         return 1;
